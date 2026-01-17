@@ -21,7 +21,7 @@ type CatFact struct {
 	Length int    `json:"length"`
 }
 
-func FetchData() (CatFact, error) {
+func FetchCat() (CatFact, error) {
 	url := "https://catfact.ninja/fact"
 
 	res, err := http.Get(url)
@@ -38,12 +38,44 @@ func FetchData() (CatFact, error) {
 
 	var data CatFact
 
-	if err := json.NewDecoder(res.Body).Decode(&data) ; err != nil{
-		return CatFact{} , err
+	if err := json.NewDecoder(res.Body).Decode(&data); err != nil {
+		return CatFact{}, err
 	}
 
 	return data, nil
 }
+
+type Joke struct {
+	Setup     string `json:"setup"`
+	Punchline string `json:"punchline"`
+}
+
+func FetchJoke() (Joke ,error) {
+	url := "https://official-joke-api.appspot.com/random_joke"
+
+	res , err := http.Get(url)
+
+	if err != nil {
+		return  Joke{},err
+	}
+
+	defer res.Body.Close()
+
+	if res.StatusCode != http.StatusOK{
+		return Joke{},fmt.Errorf("joke api failed")
+	}
+
+	var joke Joke
+
+	if err := json.NewDecoder(res.Body).Decode(&joke); err != nil {
+		return Joke{},err
+	}
+
+	return joke , nil
+
+}
+
+
 
 func dashboardHandler(w http.ResponseWriter, r *http.Request) {
 
@@ -56,21 +88,65 @@ func dashboardHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	data, err := FetchData()
 
-	if err != nil {
 
-		WriteJSON(w, http.StatusBadGateway, map[string]any{
-			"ok":    false,
-			"error": "failed to fetch external data",
-		})
-		return
+	catCh := make(chan CatFact)
+	jokeCh := make(chan Joke)
+	errCh := make(chan error)
+
+
+
+	go func (){
+		data ,err := FetchCat()
+
+		if err != nil {
+			errCh <- err
+			return
+		}
+
+		catCh <- data
+	}()
+
+
+	go func (){
+		joke ,err :=FetchJoke() 
+		
+		if err != nil {
+			errCh <- err
+			return
+		}
+		jokeCh <- joke
+	}()
+
+
+
+	var cat CatFact
+	var joke Joke 
+
+	for i := 0 ; i < 2 ; i++{
+		select {
+		case c := <-catCh:
+			cat = c 
+		case j := <- jokeCh:
+			joke = j
+		case err := <- errCh:
+			WriteJSON(w,http.StatusBadGateway,map[string]any{
+				"ok":false,
+				"error":err.Error(),
+			})
+			return
+		}
 	}
 
-	WriteJSON(w, http.StatusOK, map[string]any{
-		"ok":   true,
-		"fact": data.Fact,
+	WriteJSON(w,http.StatusOK,map[string]any{
+		"ok": true,
+		"data" : map[string]any{
+			"cat" : cat.Fact,
+			"joke" : joke.Setup + " - " + joke.Punchline,
+		},
 	})
+
+	
 
 }
 
