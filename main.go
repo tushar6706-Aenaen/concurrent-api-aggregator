@@ -89,7 +89,8 @@ func dashboardHandler(w http.ResponseWriter, r *http.Request) {
 	var (
 		cat  CatFact
 		joke Joke
-		err  error
+		catErr  error
+		jokeErr error
 	)
 
 	wg := sync.WaitGroup{}
@@ -97,17 +98,17 @@ func dashboardHandler(w http.ResponseWriter, r *http.Request) {
 
 	go func() {
 		defer wg.Done()
-		cat, err = FetchCat()
+		cat, catErr = FetchCat()
 	}()
 
 	go func() {
 		defer wg.Done()
-		joke, err = FetchJoke()
+		joke, jokeErr = FetchJoke()
 	}()
 
 	wg.Wait()
 
-	if err != nil {
+	if catErr != nil || jokeErr != nil {
 		WriteJSON(w, http.StatusBadGateway, map[string]any{
 			"ok":    false,
 			"error": "failed to fetch data",
