@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sync"
 )
 
 func WriteJSON(w http.ResponseWriter, status int, data any) {
@@ -50,32 +51,29 @@ type Joke struct {
 	Punchline string `json:"punchline"`
 }
 
-func FetchJoke() (Joke ,error) {
+func FetchJoke() (Joke, error) {
 	url := "https://official-joke-api.appspot.com/random_joke"
 
-	res , err := http.Get(url)
+	res, err := http.Get(url)
 
 	if err != nil {
-		return  Joke{},err
+		return Joke{}, err
 	}
 
 	defer res.Body.Close()
 
-	if res.StatusCode != http.StatusOK{
-		return Joke{},fmt.Errorf("joke api failed")
+	if res.StatusCode != http.StatusOK {
+		return Joke{}, fmt.Errorf("joke api failed")
 	}
 
 	var joke Joke
 
 	if err := json.NewDecoder(res.Body).Decode(&joke); err != nil {
-		return Joke{},err
+		return Joke{}, err
 	}
 
-	return joke , nil
-
+	return joke, nil
 }
-
-
 
 func dashboardHandler(w http.ResponseWriter, r *http.Request) {
 
@@ -88,65 +86,42 @@ func dashboardHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var (
+		cat  CatFact
+		joke Joke
+		err  error
+	)
 
+	wg := sync.WaitGroup{}
+	wg.Add(2)
 
-	catCh := make(chan CatFact)
-	jokeCh := make(chan Joke)
-	errCh := make(chan error)
-
-
-
-	go func (){
-		data ,err := FetchCat()
-
-		if err != nil {
-			errCh <- err
-			return
-		}
-
-		catCh <- data
+	go func() {
+		defer wg.Done()
+		cat, err = FetchCat()
 	}()
 
-
-	go func (){
-		joke ,err :=FetchJoke() 
-		
-		if err != nil {
-			errCh <- err
-			return
-		}
-		jokeCh <- joke
+	go func() {
+		defer wg.Done()
+		joke, err = FetchJoke()
 	}()
 
+	wg.Wait()
 
-
-	var cat CatFact
-	var joke Joke 
-
-	for i := 0 ; i < 2 ; i++{
-		select {
-		case c := <-catCh:
-			cat = c 
-		case j := <- jokeCh:
-			joke = j
-		case err := <- errCh:
-			WriteJSON(w,http.StatusBadGateway,map[string]any{
-				"ok":false,
-				"error":err.Error(),
-			})
-			return
-		}
+	if err != nil {
+		WriteJSON(w, http.StatusBadGateway, map[string]any{
+			"ok":    false,
+			"error": "failed to fetch data",
+		})
+		return
 	}
 
-	WriteJSON(w,http.StatusOK,map[string]any{
+	WriteJSON(w, http.StatusOK, map[string]any{
 		"ok": true,
-		"data" : map[string]any{
-			"cat" : cat.Fact,
-			"joke" : joke.Setup + " - " + joke.Punchline,
+		"data": map[string]any{
+			"cat":  cat.Fact,
+			"joke": joke.Setup + " - " + joke.Punchline,
 		},
 	})
-
-	
 
 }
 
