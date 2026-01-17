@@ -1,10 +1,12 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"sync"
+	"time"
 )
 
 func WriteJSON(w http.ResponseWriter, status int, data any) {
@@ -22,10 +24,16 @@ type CatFact struct {
 	Length int    `json:"length"`
 }
 
-func FetchCat() (CatFact, error) {
+func FetchCat(ctx context.Context) (CatFact, error) {
 	url := "https://catfact.ninja/fact"
 
-	res, err := http.Get(url)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+
+	if err != nil {
+		return CatFact{}, err
+	}
+
+	res, err := http.DefaultClient.Do(req)
 
 	if err != nil {
 		return CatFact{}, err
@@ -51,10 +59,16 @@ type Joke struct {
 	Punchline string `json:"punchline"`
 }
 
-func FetchJoke() (Joke, error) {
+func FetchJoke(ctx context.Context) (Joke, error) {
 	url := "https://official-joke-api.appspot.com/random_joke"
 
-	res, err := http.Get(url)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+
+	if err != nil {
+		return Joke{} ,err
+	}
+
+	res, err := http.DefaultClient.Do(req)
 
 	if err != nil {
 		return Joke{}, err
@@ -86,9 +100,11 @@ func dashboardHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+
+
 	var (
-		cat  CatFact
-		joke Joke
+		cat     CatFact
+		joke    Joke
 		catErr  error
 		jokeErr error
 	)
@@ -96,14 +112,18 @@ func dashboardHandler(w http.ResponseWriter, r *http.Request) {
 	wg := sync.WaitGroup{}
 	wg.Add(2)
 
+	
+	ctx ,cancle := context.WithTimeout(context.Background(), 2* time.Second)
+	defer cancle()
+	
 	go func() {
 		defer wg.Done()
-		cat, catErr = FetchCat()
+		cat, catErr = FetchCat(ctx)
 	}()
 
 	go func() {
 		defer wg.Done()
-		joke, jokeErr = FetchJoke()
+		joke, jokeErr = FetchJoke(ctx)
 	}()
 
 	wg.Wait()
